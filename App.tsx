@@ -409,7 +409,28 @@ export default function App() {
                 <KillsOverTimeChart data={stats.killsOverTime} />
             </Section>
             <Section title="Leaderboard de Jogadores" icon={<Trophy size={24} className="mr-3 text-blue-400"/>}>
-                <div className="overflow-x-auto"><table className="w-full min-w-max text-left"><thead><tr className="border-b border-gray-700">{playerColumns.map(c => <th key={c.header} className="p-3 text-sm font-semibold text-gray-400 uppercase tracking-wider text-center first:text-left">{c.header}</th>)}</tr></thead><tbody>{rankedPlayerData.map((r, i) => <tr key={i} className="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">{playerColumns.map(c => <td key={c.accessor} className={`p-3 text-white text-center first:text-left ${c.className || ''} ${c.accessor === 'net' ? r.className : ''}`}>{r[c.accessor]}</td>)}</tr></tbody></table></div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-max text-left">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      {playerColumns.map(c => (
+                        <th key={c.header} className="p-3 text-sm font-semibold text-gray-400 uppercase tracking-wider text-center first:text-left">{c.header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rankedPlayerData.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">
+                        {playerColumns.map(c => (
+                          <td key={c.accessor} className={`p-3 text-white text-center first:text-left ${c.className || ''} ${c.accessor === 'net' ? r.className : ''}`}>
+                            {r[c.accessor]}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Section>
             <Section title="Recorde de Distância" icon={<Crosshair size={24} className="mr-3 text-blue-400"/>}>
                  <div className="text-center">
