@@ -1,0 +1,5 @@
+{
+  "name": "SCUM Dashboard de Rivalidade Avançado",
+  "description": "Um dashboard avançado para analisar logs de kills do servidor de SCUM a partir de um arquivo CSV, focado na rivalidade entre dois clãs. Faça o upload do seu log de kills para ver estatísticas detalhadas, gráficos interativos, leaderboards e métricas de desempenho.",
+  "requestFramePermissions": []
+}
