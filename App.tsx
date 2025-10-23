@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import pako from 'pako';
 import { 
-  Skull, Crosshair, Target, Scaling, Trophy, Zap, Swords, UploadCloud, FileText, BarChart3, Trash2, CalendarDays, Rocket, ShieldQuestion, Clock, History
+  Skull, Crosshair, Target, Scaling, Trophy, Zap, Swords, UploadCloud, FileText, BarChart3, Trash2, CalendarDays, Rocket, ShieldQuestion, Clock, History, Share2
 } from 'lucide-react';
 
 // --- TYPE DEFINITIONS ---
@@ -157,6 +157,7 @@ export default function App() {
   const [originalCsvText, setOriginalCsvText] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [shareNotification, setShareNotification] = useState<string>('');
 
   const cleanName = (name: string): string => name?.replace(/[😎😭]/g, '').trim() || '';
   const parseDistance = (distStr: string): number => parseInt(distStr?.replace('m', ''), 10) || 0;
@@ -274,35 +275,6 @@ export default function App() {
     }
   }, []);
   
-  const loadRecentFiles = useCallback(() => {
-    try {
-        const savedFiles = localStorage.getItem('scumRivalryRecentFiles');
-        if (savedFiles) {
-            setRecentFiles(JSON.parse(savedFiles));
-        }
-    } catch (e) {
-        console.error("Failed to load recent files from localStorage", e);
-        localStorage.removeItem('scumRivalryRecentFiles');
-    }
-  }, []);
-
-  useEffect(() => {
-    const loadInitialData = async () => {
-        loadRecentFiles();
-        const savedFiles = localStorage.getItem('scumRivalryRecentFiles');
-        if (savedFiles) {
-            const files: RecentFile[] = JSON.parse(savedFiles);
-            if (files.length > 0) {
-                const initialContent = files[0].content;
-                setOriginalCsvText(initialContent);
-                await processData(initialContent);
-            }
-        }
-        setLoading(false);
-    };
-    loadInitialData();
-  }, [processData, loadRecentFiles]);
-  
   const handleDataLoad = useCallback(async (csvText: string, fileName: string) => {
     setLoading(true);
     setError(null);
@@ -324,6 +296,46 @@ export default function App() {
     await processData(csvText);
     setLoading(false);
   }, [processData]);
+  
+  const loadRecentFiles = useCallback(() => {
+    try {
+        const savedFiles = localStorage.getItem('scumRivalryRecentFiles');
+        if (savedFiles) setRecentFiles(JSON.parse(savedFiles));
+    } catch (e) {
+        console.error("Failed to load recent files from localStorage", e);
+        localStorage.removeItem('scumRivalryRecentFiles');
+    }
+  }, []);
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const hash = window.location.hash.substring(1);
+        if (hash.startsWith('data=')) {
+          setLoading(true);
+          const compressedData = atob(hash.substring(5).replace(/_/g, '/').replace(/-/g, '+'));
+          const decompressed = pako.inflate(new Uint8Array([...compressedData].map(c => c.charCodeAt(0))), { to: 'string' });
+          await handleDataLoad(decompressed, 'Relatório Compartilhado');
+        } else {
+          loadRecentFiles();
+          const savedFiles = localStorage.getItem('scumRivalryRecentFiles');
+          if (savedFiles) {
+            const files: RecentFile[] = JSON.parse(savedFiles);
+            if (files.length > 0) {
+              setOriginalCsvText(files[0].content);
+              await processData(files[0].content);
+            }
+          }
+        }
+      } catch (e) {
+        setError("Não foi possível carregar os dados compartilhados. O link pode estar corrompido.");
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadInitialData();
+  }, [processData, handleDataLoad, loadRecentFiles]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -332,6 +344,7 @@ export default function App() {
     reader.onload = async (e) => {
       const csvText = e.target?.result as string;
       if (!csvText) { setError("Arquivo vazio ou ilegível."); setLoading(false); return; }
+      window.location.hash = ''; // Clear hash on new upload
       handleDataLoad(csvText, file.name);
     };
     reader.onerror = () => { setError("Falha ao ler o arquivo."); setLoading(false); };
@@ -342,17 +355,33 @@ export default function App() {
     const updatedFiles = recentFiles.filter((_, index) => index !== indexToDelete);
     setRecentFiles(updatedFiles);
     localStorage.setItem('scumRivalryRecentFiles', JSON.stringify(updatedFiles));
-    // If the deleted file was the one being displayed, clear the dashboard
     if (stats && originalCsvText === recentFiles[indexToDelete].content) {
         setStats(null);
         setOriginalCsvText(null);
+    }
+  };
+
+  const handleShare = () => {
+    if (!originalCsvText) return;
+    try {
+        const compressed = pako.deflate(originalCsvText, { level: 9 });
+        const base64 = btoa(String.fromCharCode.apply(null, compressed as unknown as number[]));
+        const urlSafeBase64 = base64.replace(/\+/g, '-').replace(/\//g, '_');
+        const url = `${window.location.origin}${window.location.pathname}#data=${urlSafeBase64}`;
+        navigator.clipboard.writeText(url);
+        setShareNotification('Link copiado!');
+        setTimeout(() => setShareNotification(''), 3000);
+    } catch (e) {
+        setShareNotification('Erro ao gerar o link!');
+        console.error(e);
+        setTimeout(() => setShareNotification(''), 3000);
     }
   };
   
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => setDateFilter(prev => ({ ...prev, [e.target.name]: e.target.value }));
   const handleApplyFilters = async () => { if (!originalCsvText) return; setLoading(true); await processData(originalCsvText, dateFilter.start, dateFilter.end); setLoading(false); };
   const handleClearFilters = async () => { if (!originalCsvText) return; setLoading(true); setDateFilter({ start: '', end: '' }); await processData(originalCsvText); setLoading(false); };
-  const handleForgetCsv = () => { localStorage.removeItem('scumRivalryRecentFiles'); window.location.reload(); };
+  const handleForgetCsv = () => { localStorage.removeItem('scumRivalryRecentFiles'); window.location.hash = ''; window.location.reload(); };
 
   const { playerColumns, distanceColumns } = useMemo(() => ({
     playerColumns: [
@@ -376,11 +405,15 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200 p-4 sm:p-6 md:p-8 font-sans relative">
       {loading && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"><Zap className="animate-spin text-brand-tdb" size={48} /></div>}
-      
+      {shareNotification && <div className="fixed top-5 right-5 bg-green-600 text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in">{shareNotification}</div>}
+
       <header className="mb-8">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-start">
           <h1 className="text-2xl md:text-4xl font-extrabold text-white">Dashboard de Rivalidade</h1>
-          <button onClick={handleForgetCsv} className="flex items-center text-sm text-gray-400 hover:text-red-400 transition-colors"><Trash2 size={14} className="mr-2" />Limpar Histórico</button>
+          <div className="flex items-center gap-4">
+            <button onClick={handleShare} className="flex items-center text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors"><Share2 size={14} className="mr-2" />Compartilhar Análise</button>
+            <button onClick={handleForgetCsv} className="flex items-center text-sm text-gray-400 hover:text-red-400 transition-colors"><Trash2 size={14} className="mr-2" />Limpar Histórico</button>
+          </div>
         </div>
         <div className="mt-4 p-4 bg-gray-900 border border-gray-700 rounded-lg flex flex-col sm:flex-row justify-around items-center text-center">
           <div className="flex items-center"><h2 className="text-3xl md:text-5xl font-bold text-brand-tdb mr-4">{stats.tdbKills}</h2><span className="text-xl md:text-2xl text-gray-300">TDB</span></div>
