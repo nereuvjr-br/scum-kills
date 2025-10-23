@@ -112,7 +112,7 @@ const KillsOverTimeChart: React.FC<{ data: KillOverTime[] }> = ({ data }) => {
   );
 };
 
-const FileUploadScreen: React.FC<{ onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void; error: string | null; loading: boolean; recentFiles: RecentFile[]; onRecentFileSelect: (content: string) => void; }> = ({ onFileSelect, error, loading, recentFiles, onRecentFileSelect }) => (
+const FileUploadScreen: React.FC<{ onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void; error: string | null; loading: boolean; recentFiles: RecentFile[]; onRecentFileSelect: (content: string) => void; onDeleteRecentFile: (index: number) => void; }> = ({ onFileSelect, error, loading, recentFiles, onRecentFileSelect, onDeleteRecentFile }) => (
   <div className="flex items-center justify-center min-h-screen bg-gray-950 text-white p-4 font-sans">
     <div className="bg-gray-900 p-10 rounded-lg shadow-2xl text-center max-w-2xl w-full border border-gray-700 animate-fade-in">
       <Rocket size={64} className="mx-auto text-brand-tdb mb-6" />
@@ -136,7 +136,10 @@ const FileUploadScreen: React.FC<{ onFileSelect: (e: React.ChangeEvent<HTMLInput
                   <p className="font-semibold text-white">{file.name}</p>
                   <p className="text-xs text-gray-400">Carregado em: {new Date(file.uploadedAt).toLocaleString('pt-BR')}</p>
                 </div>
-                <button onClick={() => onRecentFileSelect(file.content)} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm font-semibold rounded-md transition-colors">Carregar</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => onRecentFileSelect(file.content)} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white text-sm font-semibold rounded-md transition-colors">Carregar</button>
+                  <button onClick={() => onDeleteRecentFile(index)} title="Remover do histórico" className="p-2 text-gray-500 hover:text-red-400 transition-colors rounded-md"><Trash2 size={18} /></button>
+                </div>
               </li>
             ))}
           </ul>
@@ -228,22 +231,27 @@ export default function App() {
       
       const sortedKillsOverTime = Object.entries(killsOverTime).sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime()).map(([date, data]) => ({ date, ...data }));
       
-      // Process nemesis pairs for head-to-head stats
       const processedNemesis: { [key: string]: NemesisPair } = {};
       Object.entries(nemesisPairsRaw).forEach(([key, count]) => {
           const [killer, victim] = key.split('|');
-          const sortedKey = [killer, victim].sort().join('|');
+          const sortedPair = [killer, victim].sort();
+          const sortedKey = sortedPair.join('|');
+          
           if (!processedNemesis[sortedKey]) {
               processedNemesis[sortedKey] = {
-                  player1: killer, player2: victim,
+                  player1: sortedPair[0], player2: sortedPair[1],
                   player1Kills: 0, player2Kills: 0,
-                  player1Clan: clanDataMap.get(killer) || 'Sem Clã',
-                  player2Clan: clanDataMap.get(victim) || 'Sem Clã',
+                  player1Clan: clanDataMap.get(sortedPair[0]) || 'Sem Clã',
+                  player2Clan: clanDataMap.get(sortedPair[1]) || 'Sem Clã',
                   total: 0
               };
           }
-          processedNemesis[sortedKey].player1Kills += (processedNemesis[sortedKey].player1 === killer) ? count : 0;
-          processedNemesis[sortedKey].player2Kills += (processedNemesis[sortedKey].player2 === killer) ? count : 0;
+
+          if (processedNemesis[sortedKey].player1 === killer) {
+              processedNemesis[sortedKey].player1Kills += count;
+          } else {
+              processedNemesis[sortedKey].player2Kills += count;
+          }
           processedNemesis[sortedKey].total += count;
       });
       const finalNemesisPairs = Object.values(processedNemesis).sort((a, b) => b.total - a.total).slice(0, 10);
@@ -281,24 +289,14 @@ export default function App() {
   useEffect(() => {
     const loadInitialData = async () => {
         loadRecentFiles();
-        const lastFile = localStorage.getItem('lastLoadedCsvText'); // Legacy support
-        let initialContent: string | null = null;
-        if(lastFile) {
-            initialContent = lastFile;
-            localStorage.removeItem('lastLoadedCsvText'); // Migrate to new system
-        } else {
-            const savedFiles = localStorage.getItem('scumRivalryRecentFiles');
-            if (savedFiles) {
-                const files: RecentFile[] = JSON.parse(savedFiles);
-                if (files.length > 0) {
-                    initialContent = files[0].content;
-                }
+        const savedFiles = localStorage.getItem('scumRivalryRecentFiles');
+        if (savedFiles) {
+            const files: RecentFile[] = JSON.parse(savedFiles);
+            if (files.length > 0) {
+                const initialContent = files[0].content;
+                setOriginalCsvText(initialContent);
+                await processData(initialContent);
             }
-        }
-
-        if (initialContent) {
-            setOriginalCsvText(initialContent);
-            await processData(initialContent);
         }
         setLoading(false);
     };
@@ -311,7 +309,6 @@ export default function App() {
     setStats(null);
     setDateFilter({ start: '', end: '' });
 
-    // Save to recent files list
     let currentFiles: RecentFile[] = [];
     try {
         const saved = localStorage.getItem('scumRivalryRecentFiles');
@@ -319,7 +316,7 @@ export default function App() {
     } catch (e) { console.error("Could not parse recent files."); }
 
     const newFile: RecentFile = { name: fileName, content: csvText, uploadedAt: new Date().toISOString() };
-    const updatedFiles = [newFile, ...currentFiles.filter(f => f.name !== fileName)].slice(0, 5); // Add new, remove duplicates, limit to 5
+    const updatedFiles = [newFile, ...currentFiles.filter(f => f.name !== fileName)].slice(0, 5);
     localStorage.setItem('scumRivalryRecentFiles', JSON.stringify(updatedFiles));
     setRecentFiles(updatedFiles);
 
@@ -340,6 +337,17 @@ export default function App() {
     reader.onerror = () => { setError("Falha ao ler o arquivo."); setLoading(false); };
     reader.readAsText(file);
   };
+
+  const handleDeleteRecentFile = (indexToDelete: number) => {
+    const updatedFiles = recentFiles.filter((_, index) => index !== indexToDelete);
+    setRecentFiles(updatedFiles);
+    localStorage.setItem('scumRivalryRecentFiles', JSON.stringify(updatedFiles));
+    // If the deleted file was the one being displayed, clear the dashboard
+    if (stats && originalCsvText === recentFiles[indexToDelete].content) {
+        setStats(null);
+        setOriginalCsvText(null);
+    }
+  };
   
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => setDateFilter(prev => ({ ...prev, [e.target.name]: e.target.value }));
   const handleApplyFilters = async () => { if (!originalCsvText) return; setLoading(true); await processData(originalCsvText, dateFilter.start, dateFilter.end); setLoading(false); };
@@ -359,8 +367,8 @@ export default function App() {
     distanceColumns: [{ header: '#', accessor: 'rank', className: 'w-12 font-bold' }, { header: 'Abateu', accessor: 'killerName' }, { header: 'Vítima', accessor: 'victimName' }, { header: 'Arma', accessor: 'weapon' }, { header: 'Distância', accessor: 'distance', className: 'font-bold text-sky-400' }]
   }), []);
 
-  if (loading && !stats) return <FileUploadScreen onFileSelect={handleFileUpload} error={error} loading={true} recentFiles={recentFiles} onRecentFileSelect={(content) => handleDataLoad(content, "from history")} />;
-  if (!stats) return <FileUploadScreen onFileSelect={handleFileUpload} error={error} loading={false} recentFiles={recentFiles} onRecentFileSelect={(content) => handleDataLoad(content, "from history")} />;
+  if (loading && !stats) return <FileUploadScreen onFileSelect={handleFileUpload} error={error} loading={true} recentFiles={recentFiles} onRecentFileSelect={(content) => handleDataLoad(content, "from history")} onDeleteRecentFile={handleDeleteRecentFile} />;
+  if (!stats) return <FileUploadScreen onFileSelect={handleFileUpload} error={error} loading={false} recentFiles={recentFiles} onRecentFileSelect={(content) => handleDataLoad(content, "from history")} onDeleteRecentFile={handleDeleteRecentFile} />;
 
   const rankedPlayerData = stats.playerLeaderboard.map((p, i) => ({ ...p, rank: i + 1, net: p.net > 0 ? `+${p.net}`: p.net, className: p.net > 0 ? 'text-green-400' : p.net < 0 ? 'text-red-400' : 'text-gray-400', clan: (<span className={`font-semibold ${p.clan === 'TDB' ? 'text-brand-tdb' : 'text-brand-cdc'}`}>{p.clan}</span>) }));
   const rankedDistanceData = stats.distanceLeaderboard.map((k, i) => ({ ...k, rank: i + 1, distance: `${k.distance}m` }));
@@ -390,7 +398,6 @@ export default function App() {
       </div>
 
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Coluna Principal (2/3) */}
         <div className="lg:col-span-2 flex flex-col gap-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KPICard title="K/D TDB" value={stats.tdbKD} icon={<Scaling size={24} className="text-brand-tdb" />} />
@@ -413,17 +420,19 @@ export default function App() {
             </Section>
         </div>
 
-        {/* Coluna Lateral (1/3) */}
         <div className="lg:col-span-1 flex flex-col gap-6">
             <Section title="Top Armas da Rivalidade" icon={<BarChart3 size={24} className="mr-3 text-blue-400"/>}>
                 <HorizontalBarChart data={stats.sortedWeapons} barColor="bg-sky-500" />
             </Section>
             <Section title="Maiores Rivalidades (H2H)" icon={<ShieldQuestion size={24} className="mr-3 text-blue-400"/>}>
                 <ul className="space-y-3">
-                    {stats.nemesisPairs.map((pair, i) => (
+                    {stats.nemesisPairs.map((pair, i) => {
+                        const p1IsTdb = pair.player1Clan === 'TDB';
+                        const p2IsTdb = pair.player2Clan === 'TDB';
+                        return (
                         <li key={i} className="flex items-center justify-between p-2 bg-gray-800/50 rounded-md text-sm">
                            <div className="flex items-center truncate">
-                               <span className={`font-bold truncate pr-1 ${pair.player1Clan === 'TDB' ? 'text-brand-tdb' : 'text-brand-cdc'}`}>{pair.player1}</span>
+                               <span className={`font-bold truncate pr-1 ${p1IsTdb ? 'text-brand-tdb' : 'text-brand-cdc'}`}>{pair.player1}</span>
                            </div>
                            <div className="flex items-center font-bold text-lg mx-2">
                                <span className="text-white bg-gray-700 px-2 rounded-md">{pair.player1Kills}</span>
@@ -431,10 +440,10 @@ export default function App() {
                                <span className="text-white bg-gray-700 px-2 rounded-md">{pair.player2Kills}</span>
                            </div>
                            <div className="flex items-center truncate justify-end text-right">
-                              <span className={`font-bold truncate pl-1 ${pair.player2Clan === 'TDB' ? 'text-brand-tdb' : 'text-brand-cdc'}`}>{pair.player2}</span>
+                              <span className={`font-bold truncate pl-1 ${p2IsTdb ? 'text-brand-tdb' : 'text-brand-cdc'}`}>{pair.player2}</span>
                            </div>
                         </li>
-                    ))}
+                    )})}
                 </ul>
             </Section>
             <Section title="Abates Recentes" icon={<Clock size={24} className="mr-3 text-blue-400"/>}>
