@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import pako from 'pako';
 import { 
@@ -45,6 +46,12 @@ const clanDataMap = new Map([
   ['P2Kid', 'Clan do Carrale'], ['Mewtwo', 'Clan do Carrale'], ['BRUTÃO', 'Clan do Carrale'],
   ['Carrale', 'Clan do Carrale'], ['Chineisinho', 'Clan do Carrale'], ['RATAO', 'Clan do Carrale'],
   ['Sabugador', 'Clan do Carrale'], ['21', 'Clan do Carrale'], ['Lubi', 'Clan do Carrale'],
+  ['MarcosTHS', 'Clan do Carrale'],
+  ['Malvadao', 'Clan do Carrale'],
+  ['Dgó', 'Clan do Carrale'],
+  ['B M X', 'Clan do Carrale'],
+  ['Baguncinha', 'Clan do Carrale'],
+  ['Leviathan', 'Clan do Carrale'],
 ]);
 
 // --- REUSABLE UI & CHART COMPONENTS ---
